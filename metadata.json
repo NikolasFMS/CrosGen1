@@ -1,0 +1,5 @@
+{
+  "name": "Crossword Architect",
+  "description": "A professional crossword puzzle creator. Input words manually or generate them with Gemini, place them on an interactive grid, and print the result with automatically generated clues.",
+  "requestFramePermissions": []
+}
