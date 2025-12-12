@@ -130,7 +130,8 @@ export const generateLayout = (words: WordData[], rows: number, cols: number): P
   const isOccupied = (r: number, c: number) => gridMap.has(`${r},${c}`);
   const getChar = (r: number, c: number) => gridMap.get(`${r},${c}`);
 
-  const canPlace = (word: string, row: number, col: number, orientation: Orientation): boolean => {
+  // Helper to check placement validity with configurable gap strictness
+  const canPlace = (word: string, row: number, col: number, orientation: Orientation, strictGap: boolean): boolean => {
       const dr = orientation === 'down' ? 1 : 0;
       const dc = orientation === 'across' ? 1 : 0;
 
@@ -145,20 +146,23 @@ export const generateLayout = (words: WordData[], rows: number, cols: number): P
           const char = word[i];
           const existing = getChar(r, c);
 
-          // 1. Mismatch
+          // 1. Mismatch check
           if (existing && existing !== char) return false;
 
-          // 2. Adjacency checks
+          // 2. Adjacency checks (only applies if we are placing into an empty cell)
           if (!existing) {
-              const pDr = dc; 
-              const pDc = dr; 
+              const pDr = dc; // perpendicular direction row
+              const pDc = dr; // perpendicular direction col
               
-              // Standard Check: Immediate neighbors (no touching parallel words allowed)
+              // Standard Check: Immediate neighbors (No parallel touching allowed ever)
+              // This is the "1 cell gap" rule (Grid 1x1 spacing)
               if (isOccupied(r + pDr, c + pDc) || isOccupied(r - pDr, c - pDc)) return false;
 
-              // Extended Check: 1-cell gap check (minimum 2 cells spacing requested)
-              // If r+2 is occupied, there is only a 1-cell gap. We want at least 2 empty cells (Gap 2).
-              if (isOccupied(r + 2 * pDr, c + 2 * pDc) || isOccupied(r - 2 * pDr, c - 2 * pDc)) return false;
+              // Extended Check: 2-cell gap rule
+              // If strictGap is true, we ensure there is an EXTRA empty cell between parallel words.
+              if (strictGap) {
+                if (isOccupied(r + 2 * pDr, c + 2 * pDc) || isOccupied(r - 2 * pDr, c - 2 * pDc)) return false;
+              }
 
               // Diagonal Check: Prevent "corner touching" (Strict Criss-Cross Rule)
               const diags = [
@@ -170,7 +174,8 @@ export const generateLayout = (words: WordData[], rows: number, cols: number): P
 
               for (const d of diags) {
                 if (isOccupied(r + d.dr, c + d.dc)) {
-                   // If diagonal is occupied, one of the shared orthogonal neighbors must be occupied
+                   // If diagonal is occupied, one of the shared orthogonal neighbors MUST be occupied
+                   // (meaning it's a valid crossing). If both shared neighbors are empty, it's a corner touch.
                    const shared1 = isOccupied(r + d.dr, c);
                    const shared2 = isOccupied(r, c + d.dc);
                    if (!shared1 && !shared2) return false;
@@ -179,7 +184,7 @@ export const generateLayout = (words: WordData[], rows: number, cols: number): P
           }
       }
 
-      // Check immediate start/end boundaries
+      // Check immediate start/end boundaries (head and tail of the word)
       if (isOccupied(row - dr, col - dc)) return false;
       if (isOccupied(row + word.length * dr, col + word.length * dc)) return false;
 
@@ -195,63 +200,95 @@ export const generateLayout = (words: WordData[], rows: number, cols: number): P
       placed.push(pw);
   };
 
-  // Place first word in center
+  // --- Step 1: Place first word in exact center ---
   const firstWord = sortedWords[0];
   const fr = Math.floor(rows / 2);
   const fc = Math.floor((cols - firstWord.word.length) / 2);
-  // Ensure it fits
+  
   if (fc >= 0) {
       placeWordInMap({ ...firstWord, row: fr, col: fc, orientation: 'across' });
   } else {
-      // If it doesn't fit centered, try 0,0
       placeWordInMap({ ...firstWord, row: 0, col: 0, orientation: 'across' });
   }
 
+  // --- Step 2: Iteratively place remaining words ---
   const unplaced = sortedWords.slice(1);
   let changed = true;
 
-  // Retry loop
+  // Grid center coordinates for distance calculation
+  const centerR = rows / 2;
+  const centerC = cols / 2;
+
   while (changed && unplaced.length > 0) {
       changed = false;
       for (let i = 0; i < unplaced.length; i++) {
           const w = unplaced[i];
-          let bestPlacement: PlacedWord | null = null;
+          
+          // We look for the BEST placement, not just the first one.
+          // Best = valid placement closest to the center of the grid.
+          let bestMove: { r: number, c: number, o: Orientation, dist: number } | null = null;
+          
+          // Try strict gap first (2 cells), if no moves found, retry with relaxed gap (1 cell)
+          const gapStrategies = [true, false]; 
 
-          // Try to intersect with any placed word
-          for (const pw of placed) {
-              for (let j = 0; j < w.word.length; j++) {
-                  const char = w.word[j];
-                  
-                  // Scan placed word for matching char
-                  const pDr = pw.orientation === 'down' ? 1 : 0;
-                  const pDc = pw.orientation === 'across' ? 1 : 0;
-                  
-                  for (let k = 0; k < pw.word.length; k++) {
-                       if (pw.word[k] === char) {
-                           // Potential intersection
-                           const intersectR = pw.row + k * pDr;
-                           const intersectC = pw.col + k * pDc;
-                           
-                           const newOrientation: Orientation = pw.orientation === 'across' ? 'down' : 'across';
-                           const nDr = newOrientation === 'down' ? 1 : 0;
-                           const nDc = newOrientation === 'across' ? 1 : 0;
-                           
-                           const startR = intersectR - (j * nDr);
-                           const startC = intersectC - (j * nDc);
-                           
-                           if (canPlace(w.word, startR, startC, newOrientation)) {
-                               bestPlacement = { ...w, row: startR, col: startC, orientation: newOrientation };
-                               break;
-                           }
-                       }
+          for (const useStrictGap of gapStrategies) {
+              
+              // If we found a move in a previous strategy (Strict), don't try the relaxed one
+              if (bestMove) break;
+
+              // Check intersections with ALL currently placed words
+              for (const pw of placed) {
+                  for (let j = 0; j < w.word.length; j++) {
+                      const char = w.word[j];
+                      
+                      // Scan placed word for matching char
+                      const pDr = pw.orientation === 'down' ? 1 : 0;
+                      const pDc = pw.orientation === 'across' ? 1 : 0;
+                      
+                      for (let k = 0; k < pw.word.length; k++) {
+                          if (pw.word[k] === char) {
+                              // Potential intersection found
+                              const intersectR = pw.row + k * pDr;
+                              const intersectC = pw.col + k * pDc;
+                              
+                              const newOrientation: Orientation = pw.orientation === 'across' ? 'down' : 'across';
+                              const nDr = newOrientation === 'down' ? 1 : 0;
+                              const nDc = newOrientation === 'across' ? 1 : 0;
+                              
+                              // Calculate start position of the candidate word
+                              const startR = intersectR - (j * nDr);
+                              const startC = intersectC - (j * nDc);
+                              
+                              // Check validity
+                              if (canPlace(w.word, startR, startC, newOrientation, useStrictGap)) {
+                                  // Calculate distance from grid center to word center
+                                  const wordCenterR = startR + (w.word.length / 2) * nDr;
+                                  const wordCenterC = startC + (w.word.length / 2) * nDc;
+                                  
+                                  const dist = Math.pow(wordCenterR - centerR, 2) + Math.pow(wordCenterC - centerC, 2);
+
+                                  if (!bestMove || dist < bestMove.dist) {
+                                      bestMove = { 
+                                          r: startR, 
+                                          c: startC, 
+                                          o: newOrientation, 
+                                          dist 
+                                      };
+                                  }
+                              }
+                          }
+                      }
                   }
-                  if (bestPlacement) break;
               }
-              if (bestPlacement) break;
           }
 
-          if (bestPlacement) {
-              placeWordInMap(bestPlacement);
+          if (bestMove) {
+              placeWordInMap({ 
+                  ...w, 
+                  row: bestMove.r, 
+                  col: bestMove.c, 
+                  orientation: bestMove.o 
+              });
               unplaced.splice(i, 1);
               changed = true;
               i--; 

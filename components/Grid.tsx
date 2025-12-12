@@ -44,6 +44,8 @@ const Grid: React.FC<GridProps> = ({
            const topWordId = cell.wordIds[cell.wordIds.length - 1];
            setSelectedWordId(topWordId === selectedWordId ? null : topWordId);
         } else {
+            // Also allow simple orientation toggle if clicking empty space? 
+            // Maybe not, interferes with selection clearing.
             setSelectedWordId(null);
         }
     }
@@ -118,6 +120,9 @@ const Grid: React.FC<GridProps> = ({
     return { style, isPhantom, isValidPhantom };
   };
 
+  // Base cell size classes: Slightly larger on mobile for touch (w-9)
+  const cellClass = "w-9 h-9 md:w-10 md:h-10 flex items-center justify-center relative cursor-pointer text-lg font-bold transition-colors duration-75 select-none";
+
   return (
     <div className="relative inline-block">
         {/* Border container wrapper to handle the outer edge clipping caused by negative margins */}
@@ -138,7 +143,7 @@ const Grid: React.FC<GridProps> = ({
                 return (
                     <div
                     key={c}
-                    className={`w-8 h-8 md:w-10 md:h-10 flex items-center justify-center relative cursor-pointer text-lg font-bold transition-colors duration-75 select-none`}
+                    className={cellClass}
                     style={style}
                     onMouseEnter={() => setHoverPos({ r, c })}
                     onClick={() => handleCellClick(r, c)}
@@ -180,8 +185,9 @@ const Grid: React.FC<GridProps> = ({
             <div 
                 className="absolute z-50 flex flex-col gap-1 bg-white shadow-xl rounded-lg p-1.5 border border-slate-200 animate-in fade-in zoom-in duration-200 no-print"
                 style={{ 
-                    top: `${selectedWordPos.r * 40}px`, // Approximate positioning based on cell size
-                    left: `${selectedWordPos.c * 40 + 50}px` 
+                    // Calculate pixel position based on cell size (approx 36px/40px)
+                    top: `${selectedWordPos.r * 40}px`, 
+                    left: `${Math.min(selectedWordPos.c * 40 + 50, (config.cols * 36) - 100)}px` // Prevent overflowing right edge
                 }}
             >
                  <div className="flex items-center justify-between pb-1 border-b mb-1">

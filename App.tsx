@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import html2canvas from 'html2canvas';
-import { Printer, Eye, EyeOff, FileText, Sparkles, Trash2, RotateCw, Settings as SettingsIcon, Wand2, Download, Image as ImageIcon, LayoutTemplate } from 'lucide-react';
+import { Printer, Eye, EyeOff, FileText, Sparkles, Trash2, RotateCw, Settings as SettingsIcon, Wand2, Download, Image as ImageIcon, LayoutTemplate, Grid3X3, List } from 'lucide-react';
 import { WordData, PlacedWord, Orientation, GeneratedContent, GridConfig } from './types';
 import { calculateGrid, validatePlacement, generateLayout } from './utils';
 import { EXAMPLE_INPUT, DEFAULT_ROWS, DEFAULT_COLS, DEFAULT_STYLE } from './constants';
@@ -21,9 +21,6 @@ const parseInput = (text: string): WordData[] => {
         const word = parts[0].replace(/[^a-zA-Zа-яА-Я0-9]/g, '').toUpperCase();
         const clue = parts.slice(1).join('-').trim();
         if (word && clue) {
-            // Check if we need to preserve IDs if reloading from storage, 
-            // but here we generate new IDs for raw text input parsing. 
-            // Logic for state restoration is handled separately.
             return { id: uuidv4(), word, clue };
         }
       }
@@ -44,7 +41,7 @@ const App: React.FC = () => {
 
   const [words, setWords] = useState<WordData[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved).words : []; // Will be populated by effect if empty but input exists
+    return saved ? JSON.parse(saved).words : []; 
   });
 
   const [placedWords, setPlacedWords] = useState<PlacedWord[]>(() => {
@@ -67,6 +64,8 @@ const App: React.FC = () => {
   const [isModeHidden, setIsModeHidden] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'words' | 'grid'>('words'); // 'words' | 'grid'
+
   const printRef = useRef<HTMLDivElement>(null);
   
   // --- Effects ---
@@ -105,16 +104,11 @@ const App: React.FC = () => {
     const text = e.target.value;
     setInputText(text);
     
-    // When typing, we generate new IDs. This breaks placed words link.
-    // Ideally, we should diff, but for simplicity, we re-parse.
-    // Use existing IDs if word/clue matches to preserve placement? 
-    // For now simple re-parse.
     const newWords = parseInput(text);
     
     // Try to match existing placed words to new words to keep them on grid
     const remappedPlacedWords: PlacedWord[] = [];
     const newWordList: WordData[] = newWords.map(nw => {
-        // Is this word already placed?
         const existing = placedWords.find(pw => pw.word === nw.word && pw.clue === nw.clue);
         if (existing) {
              remappedPlacedWords.push({ ...existing, id: nw.id });
@@ -133,7 +127,6 @@ const App: React.FC = () => {
       const parts = line.split('-');
       if (parts.length >= 2) {
         const word = parts[0].trim().toUpperCase();
-        // Capitalize first letter of clue
         let clue = parts.slice(1).join('-').trim();
         if (clue.length > 0) {
             clue = clue.charAt(0).toUpperCase() + clue.slice(1);
@@ -150,10 +143,8 @@ const App: React.FC = () => {
       .join('\n');
     
     setInputText(formattedText);
-    // Trigger re-parse via effect or direct call? Direct call safer for sync.
     const newWords = parseInput(formattedText);
     
-    // Logic to preserve placements similar to input change
     const remappedPlacedWords: PlacedWord[] = [];
     const newWordList = newWords.map(nw => {
          const existing = placedWords.find(pw => pw.word === nw.word && pw.clue === nw.clue);
@@ -172,6 +163,7 @@ const App: React.FC = () => {
       setInputText(textBlock);
       setWords(parseInput(textBlock));
       setPlacedWords([]); 
+      // Stay on words tab to review, or switch? Stay is better.
   };
 
   const handleAutoArrange = () => {
@@ -179,9 +171,9 @@ const App: React.FC = () => {
      const layout = generateLayout(words, gridConfig.rows, gridConfig.cols);
      setPlacedWords(layout);
      if (layout.length < words.length) {
-         // Could add a toast here, but for now console/visual cue is enough
          console.warn("Could not place all words");
      }
+     setMobileTab('grid'); // Switch to grid view on mobile
   };
 
   const handlePlaceWord = (word: WordData, row: number, col: number, orient: Orientation) => {
@@ -238,97 +230,118 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-full bg-slate-50 print-container">
       {/* Header - No Print */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between no-print shadow-sm z-10">
-        <div className="flex items-center gap-2">
-            <div className="bg-slate-900 text-white p-2 rounded-lg">
-                <FileText size={24} />
+      <header className="bg-white border-b border-slate-200 px-4 py-3 md:px-6 md:py-4 flex flex-wrap gap-y-3 items-center justify-between no-print shadow-sm z-20 shrink-0">
+        <div className="flex items-center gap-2 mr-4">
+            <div className="bg-slate-900 text-white p-2 rounded-lg shrink-0">
+                <FileText size={20} />
             </div>
-            <div>
-                <h1 className="text-xl font-bold text-slate-900 tracking-tight">Архитектор Кроссвордов</h1>
-                <p className="text-xs text-slate-500">Создание и Печать</p>
+            <div className="hidden sm:block">
+                <h1 className="text-lg font-bold text-slate-900 tracking-tight leading-tight">Архитектор Кроссвордов</h1>
             </div>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 ml-auto overflow-x-auto pb-1 md:pb-0 hide-scrollbar max-w-full">
              <button 
                 onClick={handleAutoArrange}
-                className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-100 transition shadow-sm text-sm font-medium"
+                className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-100 transition shadow-sm text-sm font-medium whitespace-nowrap"
                 title="Автоматически расставить слова"
             >
-                <LayoutTemplate size={16} />
-                Авторасстановка
+                <LayoutTemplate size={18} />
+                <span className="hidden md:inline">Авто</span>
             </button>
              <button 
                 onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center gap-2 px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                className="flex items-center gap-2 px-2.5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
                 title="Настройки"
             >
-                <SettingsIcon size={18} />
+                <SettingsIcon size={20} />
             </button>
              <button 
                 onClick={() => setIsAiModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:opacity-90 transition shadow-sm text-sm font-medium"
+                className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:opacity-90 transition shadow-sm text-sm font-medium whitespace-nowrap"
             >
-                <Sparkles size={16} />
-                AI Генератор
+                <Sparkles size={18} />
+                <span className="hidden md:inline">AI</span>
             </button>
-            <div className="h-6 w-px bg-slate-200 mx-2"></div>
+            <div className="h-6 w-px bg-slate-200 mx-1 shrink-0"></div>
             <button 
                 onClick={handleSaveImage}
-                className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition shadow-sm text-sm font-medium"
+                className="flex items-center gap-2 px-2.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition shadow-sm text-sm font-medium"
                 title="Сохранить как картинку"
             >
-                <ImageIcon size={16} />
-                Сохранить PNG
+                <ImageIcon size={20} />
+                <span className="hidden lg:inline">PNG</span>
             </button>
             <button 
                 onClick={() => setIsModeHidden(!isModeHidden)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${isModeHidden ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-sm font-medium transition-colors ${isModeHidden ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
             >
-                {isModeHidden ? <EyeOff size={16} /> : <Eye size={16} />}
-                {isModeHidden ? 'Показать ответы' : 'Скрыть ответы'}
+                {isModeHidden ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
             <button 
                 onClick={handlePrint}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition shadow-sm text-sm font-medium"
+                className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition shadow-sm text-sm font-medium"
             >
-                <Printer size={16} />
-                Печать
+                <Printer size={18} />
+                <span className="hidden md:inline">Печать</span>
             </button>
         </div>
       </header>
 
+      {/* Mobile Tab Navigation */}
+      <div className="lg:hidden flex bg-white border-b border-slate-200 px-2 pt-2 no-print shrink-0">
+          <button 
+            onClick={() => setMobileTab('words')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors ${mobileTab === 'words' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+              <List size={16} /> Слова ({words.length})
+          </button>
+          <button 
+            onClick={() => setMobileTab('grid')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors ${mobileTab === 'grid' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+              <Grid3X3 size={16} /> Сетка
+          </button>
+      </div>
+
       {/* Main Content */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         
-        {/* Left Sidebar: Input & Word Bank - No Print */}
-        <div className="w-80 bg-white border-r border-slate-200 flex flex-col no-print z-0 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
+        {/* Left Sidebar: Input & Word Bank */}
+        <div className={`
+            ${mobileTab === 'words' ? 'flex' : 'hidden'} 
+            lg:flex flex-col 
+            w-full lg:w-80 
+            bg-white border-r border-slate-200 
+            no-print z-10 shadow-lg lg:shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]
+            h-full
+        `}>
           <div className="flex-1 flex flex-col min-h-0">
-             {/* Tabs or Split View */}
-             <div className="p-4 border-b border-slate-100 bg-slate-50/50 relative">
+             {/* Input Area */}
+             <div className="p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
                 <div className="flex justify-between items-center mb-2">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ввод слов</h3>
                     <button 
                         onClick={handleFormatText}
                         className="text-[10px] flex items-center gap-1 bg-white border px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-600 transition"
-                        title="Формат: Заглавные, удалить повторы, исправить регистр определений"
+                        title="Формат"
                     >
                         <Wand2 size={10} />
                         Формат
                     </button>
                 </div>
                 <textarea 
-                    className="w-full h-32 p-3 text-xs border rounded-md font-mono resize-none focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full h-24 md:h-32 p-3 text-xs border rounded-md font-mono resize-none focus:ring-2 focus:ring-indigo-500 outline-none"
                     placeholder="СЛОВО - Определение"
                     value={inputText}
                     onChange={handleInputChange}
                 />
                 <p className="text-[10px] text-slate-400 mt-1 flex justify-between">
                     <span>СЛОВО - Определение</span>
-                    <span>{words.length} слов</span>
                 </p>
              </div>
 
+             {/* Word List */}
              <div className="flex-1 overflow-hidden p-4 bg-slate-50/30">
                 <WordList 
                     words={words}
@@ -343,9 +356,13 @@ const App: React.FC = () => {
         </div>
 
         {/* Center: Workspace / Print View */}
-        <div className="flex-1 overflow-auto bg-slate-100/50 p-8 flex flex-col items-center print-container">
+        <div className={`
+            ${mobileTab === 'grid' ? 'flex' : 'hidden'} 
+            lg:flex flex-1 flex-col 
+            overflow-auto bg-slate-100/50 p-2 md:p-8 items-center print-container
+        `}>
             
-            <div ref={printRef} className="max-w-4xl w-full bg-white shadow-xl rounded-xl p-8 print:shadow-none print:p-0 flex flex-col gap-8 print-break-inside-avoid">
+            <div ref={printRef} className="max-w-4xl w-full bg-white shadow-xl rounded-xl p-4 md:p-8 print:shadow-none print:p-0 flex flex-col gap-6 md:gap-8 print-break-inside-avoid">
                 
                 {/* Print Header */}
                 <div className="hidden print:block text-center border-b pb-4">
@@ -354,35 +371,37 @@ const App: React.FC = () => {
                 </div>
 
                 {/* 1. The Grid (Top) */}
-                <div className="flex flex-col items-center justify-center mb-4">
-                    <Grid 
-                        grid={grid}
-                        activeWord={activeWord}
-                        placedWords={placedWords}
-                        onPlaceWord={handlePlaceWord}
-                        onRemoveWord={handleRemoveWord}
-                        onRotateWord={handleRotateWord}
-                        orientation={orientation}
-                        toggleOrientation={() => setOrientation(o => o === 'across' ? 'down' : 'across')}
-                        isModeHidden={isModeHidden}
-                        config={gridConfig}
-                    />
+                <div className="flex flex-col items-center justify-center mb-2 md:mb-4">
+                    <div className="max-w-full overflow-x-auto pb-4 md:pb-0 px-2 -mx-2 touch-pan-x">
+                        <Grid 
+                            grid={grid}
+                            activeWord={activeWord}
+                            placedWords={placedWords}
+                            onPlaceWord={handlePlaceWord}
+                            onRemoveWord={handleRemoveWord}
+                            onRotateWord={handleRotateWord}
+                            orientation={orientation}
+                            toggleOrientation={() => setOrientation(o => o === 'across' ? 'down' : 'across')}
+                            isModeHidden={isModeHidden}
+                            config={gridConfig}
+                        />
+                    </div>
                      <div className="mt-4 text-center text-xs text-slate-400 no-print flex items-center justify-center gap-4">
-                        <span className="flex items-center gap-1"><RotateCw size={12}/> ПКМ по сетке или выберите слово для поворота</span>
+                        <span className="flex items-center gap-1"><RotateCw size={12}/> Нажмите для поворота</span>
                     </div>
                 </div>
 
                 {/* 2. Clues (Bottom) */}
-                <div className="grid grid-cols-2 gap-8 w-full border-t pt-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 w-full border-t pt-6 md:pt-8">
                     <div>
                         <h3 className="text-lg font-bold border-b pb-2 mb-4 text-slate-800">
                             По горизонтали
                         </h3>
-                        <ul className="space-y-2 mb-6 text-sm">
+                        <ul className="space-y-2 mb-4 md:mb-6 text-sm">
                             {clues.filter(c => c.orientation === 'across').map(c => (
                                 <li key={`a-${c.number}`} className="flex gap-2">
                                     <span className="font-bold text-slate-900 w-6 text-right flex-shrink-0">{c.number}.</span>
-                                    <span className="text-slate-700">{c.clue}</span>
+                                    <span className="text-slate-700 leading-snug">{c.clue}</span>
                                 </li>
                             ))}
                             {clues.filter(c => c.orientation === 'across').length === 0 && <li className="text-slate-400 italic">Нет вопросов</li>}
@@ -397,7 +416,7 @@ const App: React.FC = () => {
                             {clues.filter(c => c.orientation === 'down').map(c => (
                                 <li key={`d-${c.number}`} className="flex gap-2">
                                     <span className="font-bold text-slate-900 w-6 text-right flex-shrink-0">{c.number}.</span>
-                                    <span className="text-slate-700">{c.clue}</span>
+                                    <span className="text-slate-700 leading-snug">{c.clue}</span>
                                 </li>
                             ))}
                              {clues.filter(c => c.orientation === 'down').length === 0 && <li className="text-slate-400 italic">Нет вопросов</li>}
